@@ -36,7 +36,7 @@ create table posts(
     user_id int,
     content text not null,
     created_at datetime default current_timestamp(),
-
+    
     foreign key (user_id) references users(user_id)
 );
 
@@ -80,7 +80,7 @@ create table comments(
 	user_id int,
 	content text not null,
 	 created_at datetime default current_timestamp(),
-
+	 
 	foreign key(user_id) references users(user_id),
 	foreign key(post_id) references posts(post_id)
 );
@@ -133,7 +133,7 @@ create table friends(
 	user_id int,
     friend_id int,
     status enum("pending", "accepted"),
-
+    
     primary key(user_id, friend_id),
     foreign key(user_id) references users(user_id),
     foreign key(friend_id) references users(user_id)
@@ -198,7 +198,7 @@ insert into friends (user_id, friend_id, status) values
 create table likes(
 	user_id int,
     post_id int,
-
+    
     primary key(user_id, post_id),
     foreign key(user_id) references users(user_id),
     foreign key(post_id) references posts(post_id)
@@ -262,7 +262,7 @@ begin
 		select user_id from users
         where user_id = user_id_in
     );
-
+    
     -- Kiểm tra xem user_id có tồn tại
 	if isNull is not null
 		then insert into posts(user_id, content) values(user_id_in, content_in);
@@ -286,7 +286,7 @@ create index idx_userId_createdAt on users(user_id, created_at);
 
 explain analyze select * from posts
 order by created_at desc;
-
+ 
 drop index idx_userId_createdAt on users;
 
 /* Composite Index (user_id, created_at) giúp MySQL vừa lọc bài viết theo người dùng, 
@@ -332,4 +332,98 @@ select p.content, count(l.post_id) from posts p
 join likes l on l.post_id = p.post_id
 group by p.post_id
 order by count(post_id) desc
-limit 5;
+limit 5; 
+
+-- Bài 12
+delimiter $$
+create procedure sp_add_comment(
+    in p_user_id int,
+    in p_post_id int,
+    in p_content text
+)
+begin
+    declare user_exists int default 0;
+    declare post_exists int default 0;
+
+    select count(*) into user_exists
+    from users
+    where user_id = p_user_id;
+
+    select count(*) into post_exists
+    from posts
+    where post_id = p_post_id;
+
+    if user_exists = 0 then
+        select 'lỗi: user không tồn tại' as message;
+    elseif post_exists = 0 then
+        select 'lỗi: post không tồn tại' as message;
+    elseif p_content is null or trim(p_content) = '' then
+        select 'lỗi: nội dung bình luận rỗng' as message;
+    else
+        insert into comments(user_id, post_id, content)
+        values(p_user_id, p_post_id, p_content);
+        select 'thêm bình luận thành công' as message;
+    end if;
+end $$
+delimiter ;
+
+create or replace view vw_post_comments as
+select 
+    c.content as comment_content,
+    u.username as commenter_name,
+    c.created_at
+from comments c
+join users u on c.user_id = u.user_id
+order by c.created_at desc;
+call sp_add_comment(1, 2, 'he he he he he he');
+select * from vw_post_comments;
+
+-- BÀI 13. QUẢN LÝ LƯỢT THÍCH
+delimiter $$
+create procedure likePost(user_id_in int, post_id_in int)
+begin
+	declare isNull int;
+    
+    select user_id into isNull from likes
+    where user_id = user_id_in and post_id = post_id_in;
+    
+    if isNull is null is not null then
+		insert into likes(user_id, post_id) values(user_id_in, post_id_in);
+    end if;
+end $$
+delimiter ;
+
+call likePost(18, 30);
+
+select * from likes;
+
+drop procedure likePost;
+
+-- Bài 14. TÌM KIẾM NGƯỜI DÙNG & BÀI VIẾT
+delimiter $$
+create procedure searchSocial(
+	option_in int, 
+	keyword varchar(255), 
+    out message varchar(255)
+)
+begin
+	case
+		when option_in = 1 then
+			select * from users
+            where username like concat("%", keyword, "%");
+		when option_in = 2 then
+			select * from posts
+            where content like concat("%", keyword, "%");
+		else set message = "Chức năng không hợp lệ";
+	end case;
+end $$
+delimiter ;
+
+call searchSocial(1, "an", @message);
+call searchSocial(2, "database", @message);
+
+select @message;
+
+select * from posts;
+
+drop procedure searchSocial;
